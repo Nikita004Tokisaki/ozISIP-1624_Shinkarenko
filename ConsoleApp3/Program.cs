@@ -1,254 +1,408 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 
-namespace LibraryApp
+namespace UniversityManagement
 {
-    // Жанры книг
-    enum Genre
+    // Абстрактный класс Person — общие свойства для студентов и преподавателей
+    abstract class Person
     {
-        Fiction = 1,
-        Detective,
-        Science,
-        Fantasy,
-        Biography
+        private static int _nextId = 1;
+
+        public int Id { get; }
+        public string Name { get; }
+        public int Age { get; }
+        public string Email { get; }
+
+        protected Person(string name, int age, string email)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Имя не может быть пустым.");
+            if (age <= 0)
+                throw new ArgumentException("Возраст должен быть положительным.");
+            if (string.IsNullOrWhiteSpace(email) || !email.Contains("@"))
+                throw new ArgumentException("Некорректный e-mail.");
+
+            Id = _nextId++;
+            Name = name;
+            Age = age;
+            Email = email;
+        }
+
+        // Полиморфный метод для отображения информации о человеке
+        public abstract string GetInfo();
+
+        public override string ToString() => GetInfo();
     }
 
-    // Модель книги
-    class Book
+    // Класс Student наследует Person и хранит список курсов
+    class Student : Person
+    {
+        private readonly List<Course> _courses = new List<Course>();
+        public IReadOnlyList<Course> Courses => _courses;
+
+        public Student(string name, int age, string email)
+            : base(name, age, email)
+        {
+        }
+
+        // Записать студента на курс
+        public void Enroll(Course course)
+        {
+            if (course == null)
+                throw new ArgumentNullException(nameof(course));
+            if (!_courses.Contains(course))
+            {
+                _courses.Add(course);
+                course.AddStudent(this);
+            }
+        }
+
+        public override string GetInfo()
+        {
+            return $"[Студент #{Id}] {Name}, {Age} лет, {Email}. Записан на курсов: {_courses.Count}";
+        }
+    }
+
+    // Класс Instructor наследует Person и хранит список курсов, которые ведёт
+    class Instructor : Person
+    {
+        private readonly List<Course> _courses = new List<Course>();
+        public IReadOnlyList<Course> Courses => _courses;
+
+        public Instructor(string name, int age, string email)
+            : base(name, age, email)
+        {
+        }
+
+        // Назначить преподавателя на курс
+        public void AssignCourse(Course course)
+        {
+            if (course == null)
+                throw new ArgumentNullException(nameof(course));
+            if (!_courses.Contains(course))
+            {
+                _courses.Add(course);
+                course.AssignInstructor(this);
+            }
+        }
+
+        public override string GetInfo()
+        {
+            return $"[Преподаватель #{Id}] {Name}, {Age} лет, {Email}. Преподаёт курсов: {_courses.Count}";
+        }
+    }
+
+    // Класс Course хранит информацию о названии, преподавателе и списке студентов
+    class Course
     {
         private static int _nextId = 1;
 
         public int Id { get; }
         public string Title { get; }
-        public string Author { get; }
-        public Genre Genre { get; }
-        public int Year { get; }
-        public decimal Price { get; }
+        public Instructor? Instructor { get; private set; }
 
-        public Book(string title, string author, Genre genre, int year, decimal price)
+        private readonly List<Student> _students = new List<Student>();
+        public IReadOnlyList<Student> Students => _students;
+
+        public Course(string title)
         {
             if (string.IsNullOrWhiteSpace(title))
-                throw new ArgumentException("Название не может быть пустым.");
-            if (string.IsNullOrWhiteSpace(author))
-                throw new ArgumentException("Автор не может быть пустым.");
-            if (!Enum.IsDefined(typeof(Genre), genre))
-                throw new ArgumentException("Неверный жанр.");
-            if (year <= 0)
-                throw new ArgumentException("Год издания должен быть положительным.");
-            if (price < 0)
-                throw new ArgumentException("Цена не может быть отрицательной.");
-
+                throw new ArgumentException("Название курса не может быть пустым.");
             Id = _nextId++;
             Title = title;
-            Author = author;
-            Genre = genre;
-            Year = year;
-            Price = price;
         }
 
-        public override string ToString()
+        // Внутренний метод — добавляет студента в список
+        internal void AddStudent(Student student)
         {
-            return $"[{Id}] \"{Title}\", автор: {Author}, жанр: {Genre}, год: {Year}, цена: {Price:C}";
+            if (!_students.Contains(student))
+                _students.Add(student);
         }
+
+        // Внутренний метод — назначает преподавателя
+        internal void AssignInstructor(Instructor instructor)
+        {
+            Instructor = instructor;
+        }
+
+        public string GetInfo()
+        {
+            var instrInfo = Instructor != null
+                ? $"Преподаватель: {Instructor.Name}"
+                : "Преподаватель не назначен";
+            return $"[Курс #{Id}] {Title}. {instrInfo}. Студентов: {_students.Count}";
+        }
+
+        public override string ToString() => GetInfo();
     }
 
-    // Сервис хранения и поиска книг
-    class Library
+    // Класс University — точка хранения всех студентов, преподавателей и курсов
+    class University
     {
-        private readonly List<Book> _books = new List<Book>();
+        private readonly List<Student> _students = new List<Student>();
+        private readonly List<Instructor> _instructors = new List<Instructor>();
+        private readonly List<Course> _courses = new List<Course>();
 
-        public Library()
+        // Добавить студента
+        public Student AddStudent(string name, int age, string email)
         {
-            // Пять тестовых записей
-            _books.Add(new Book("Война и мир", "Л. Толстой", Genre.Fiction, 1869, 500m));
-            _books.Add(new Book("Десять негритят", "А. Кристи", Genre.Detective, 1939, 300m));
-            _books.Add(new Book("Краткая история времени", "С. Хокинг", Genre.Science, 1988, 450m));
-            _books.Add(new Book("Гарри Поттер", "Дж. Роулинг", Genre.Fantasy, 1997, 600m));
-            _books.Add(new Book("Автобиография", "Бенджамин Франклин", Genre.Biography, 1791, 250m));
+            var s = new Student(name, age, email);
+            _students.Add(s);
+            return s;
         }
 
-        public IReadOnlyList<Book> Books => _books;
+        // Получить студента по Id
+        public Student? GetStudent(int id) => _students.FirstOrDefault(s => s.Id == id);
 
-        public void Add(Book book) => _books.Add(book);
-        public bool Remove(int id) => _books.RemoveAll(b => b.Id == id) > 0;
+        public IEnumerable<Student> GetAllStudents() => _students;
 
-        public IEnumerable<Book> FindByTitle(string part) =>
-            _books.Where(b => b.Title.IndexOf(part ?? "", StringComparison.OrdinalIgnoreCase) >= 0);
+        // Добавить преподавателя
+        public Instructor AddInstructor(string name, int age, string email)
+        {
+            var i = new Instructor(name, age, email);
+            _instructors.Add(i);
+            return i;
+        }
 
-        public IEnumerable<Book> FindByAuthor(string part) =>
-            _books.Where(b => b.Author.IndexOf(part ?? "", StringComparison.OrdinalIgnoreCase) >= 0);
+        public Instructor? GetInstructor(int id) => _instructors.FirstOrDefault(i => i.Id == id);
 
-        public IEnumerable<Book> FindByGenre(Genre genre) =>
-            _books.Where(b => b.Genre == genre);
+        public IEnumerable<Instructor> GetAllInstructors() => _instructors;
 
-        public IEnumerable<Book> SortByTitle() => _books.OrderBy(b => b.Title);
-        public IEnumerable<Book> SortByYear() => _books.OrderBy(b => b.Year);
+        // Добавить курс
+        public Course AddCourse(string title)
+        {
+            var c = new Course(title);
+            _courses.Add(c);
+            return c;
+        }
 
-        public Book GetMostExpensive() => _books.OrderByDescending(b => b.Price).FirstOrDefault();
-        public Book GetCheapest() => _books.OrderBy(b => b.Price).FirstOrDefault();
+        public Course? GetCourse(int id) => _courses.FirstOrDefault(c => c.Id == id);
 
-        public IDictionary<string, int> GroupByAuthor() =>
-            _books.GroupBy(b => b.Author)
-                  .ToDictionary(g => g.Key, g => g.Count());
+        public IEnumerable<Course> GetAllCourses() => _courses;
     }
 
-    // Точка входа и меню
+    // Консольное меню
     class Program
     {
         static void Main()
         {
-            var library = new Library();
+            var university = new University();
 
             while (true)
             {
-                Console.WriteLine();
-                Console.WriteLine("=== Меню библиотеки ===");
-                Console.WriteLine("1 – Добавить книгу");
-                Console.WriteLine("2 – Удалить книгу по Id");
-                Console.WriteLine("3 – Найти книги");
-                Console.WriteLine("4 – Отсортировать книги");
-                Console.WriteLine("5 – Самая дорогая и самая дешевая");
-                Console.WriteLine("6 – Группировать по авторам");
-                Console.WriteLine("0 – Выход");
-                Console.Write("Выберите пункт: ");
-                var choice = Console.ReadLine();
+                Console.WriteLine("\n===== Меню управления университетом =====");
+                Console.WriteLine("1  — Добавить студента");
+                Console.WriteLine("2  — Показать всех студентов");
+                Console.WriteLine("3  — Просмотреть данные студента");
+                Console.WriteLine("4  — Добавить преподавателя");
+                Console.WriteLine("5  — Показать всех преподавателей");
+                Console.WriteLine("6  — Просмотреть данные преподавателя");
+                Console.WriteLine("7  — Создать курс");
+                Console.WriteLine("8  — Показать все курсы");
+                Console.WriteLine("9  — Просмотреть данные курса");
+                Console.WriteLine("10 — Записать студента на курс");
+                Console.WriteLine("11 — Назначить преподавателя на курс");
+                Console.WriteLine("12 — Список курсов студента");
+                Console.WriteLine("13 — Список студентов курса");
+                Console.WriteLine("0  — Выход");
+                Console.Write("Выберите команду: ");
 
-                switch (choice)
+                var choice = Console.ReadLine();
+                Console.WriteLine();
+
+                try
                 {
-                    case "1": AddBook(library); break;
-                    case "2": RemoveBook(library); break;
-                    case "3": FindBooks(library); break;
-                    case "4": SortBooks(library); break;
-                    case "5": ShowPriceExtremes(library); break;
-                    case "6": ShowGroupByAuthor(library); break;
-                    case "0": return;
-                    default: Console.WriteLine("Неверный выбор."); break;
+                    switch (choice)
+                    {
+                        case "1": AddStudent(university); break;
+                        case "2": ListStudents(university); break;
+                        case "3": ShowStudentInfo(university); break;
+                        case "4": AddInstructor(university); break;
+                        case "5": ListInstructors(university); break;
+                        case "6": ShowInstructorInfo(university); break;
+                        case "7": AddCourse(university); break;
+                        case "8": ListCourses(university); break;
+                        case "9": ShowCourseInfo(university); break;
+                        case "10": EnrollStudent(university); break;
+                        case "11": AssignInstructor(university); break;
+                        case "12": ListStudentCourses(university); break;
+                        case "13": ListCourseStudents(university); break;
+                        case "0": return;
+                        default:
+                            Console.WriteLine("Неверная команда");
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Ошибка: " + ex.Message);
                 }
             }
         }
 
-        static void AddBook(Library lib)
+        static void AddStudent(University uni)
         {
-            try
-            {
-                Console.Write("Название: ");
-                var title = Console.ReadLine();
+            Console.Write("Имя: ");
+            var name = Console.ReadLine()!;
+            Console.Write("Возраст: ");
+            var age = int.Parse(Console.ReadLine()!);
+            Console.Write("Email: ");
+            var email = Console.ReadLine()!;
 
-                Console.Write("Автор: ");
-                var author = Console.ReadLine();
-
-                Console.WriteLine("Жанры:");
-                foreach (var g in Enum.GetValues(typeof(Genre)))
-                    Console.WriteLine($"  {(int)g} – {g}");
-                Console.Write("Номер жанра: ");
-                if (!int.TryParse(Console.ReadLine(), out int gi) ||
-                    !Enum.IsDefined(typeof(Genre), gi))
-                    throw new ArgumentException("Неверный жанр.");
-                var genre = (Genre)gi;
-
-                Console.Write("Год издания: ");
-                if (!int.TryParse(Console.ReadLine(), out int year) || year <= 0)
-                    throw new ArgumentException("Неверный год.");
-
-                Console.Write("Цена: ");
-                if (!decimal.TryParse(Console.ReadLine(), NumberStyles.Any, CultureInfo.InvariantCulture, out decimal price) ||
-                    price < 0)
-                    throw new ArgumentException("Неверная цена.");
-
-                var book = new Book(title, author, genre, year, price);
-                lib.Add(book);
-                Console.WriteLine("Книга добавлена: " + book);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Ошибка: " + ex.Message);
-            }
+            var s = uni.AddStudent(name, age, email);
+            Console.WriteLine("Добавлен " + s);
         }
 
-        static void RemoveBook(Library lib)
+        static void ListStudents(University uni)
         {
-            Console.Write("Id для удаления: ");
-            if (int.TryParse(Console.ReadLine(), out int id))
-            {
-                if (lib.Remove(id))
-                    Console.WriteLine("Книга удалена.");
-                else
-                    Console.WriteLine("Книга с таким Id не найдена.");
-            }
+            foreach (var s in uni.GetAllStudents())
+                Console.WriteLine(s);
+        }
+
+        static void ShowStudentInfo(University uni)
+        {
+            Console.Write("ID студента: ");
+            var id = int.Parse(Console.ReadLine()!);
+            var s = uni.GetStudent(id);
+            if (s == null)
+                Console.WriteLine("Студент не найден");
             else
             {
-                Console.WriteLine("Неверный формат Id.");
+                Console.WriteLine(s);
+                Console.WriteLine("Курсы студента:");
+                foreach (var c in s.Courses)
+                    Console.WriteLine("  " + c);
             }
         }
 
-        static void FindBooks(Library lib)
+        static void AddInstructor(University uni)
         {
-            Console.WriteLine("1–по названию, 2–по автору, 3–по жанру");
-            switch (Console.ReadLine())
+            Console.Write("Имя: ");
+            var name = Console.ReadLine()!;
+            Console.Write("Возраст: ");
+            var age = int.Parse(Console.ReadLine()!);
+            Console.Write("Email: ");
+            var email = Console.ReadLine()!;
+
+            var i = uni.AddInstructor(name, age, email);
+            Console.WriteLine("Добавлен " + i);
+        }
+
+        static void ListInstructors(University uni)
+        {
+            foreach (var i in uni.GetAllInstructors())
+                Console.WriteLine(i);
+        }
+
+        static void ShowInstructorInfo(University uni)
+        {
+            Console.Write("ID преподавателя: ");
+            var id = int.Parse(Console.ReadLine()!);
+            var i = uni.GetInstructor(id);
+            if (i == null)
+                Console.WriteLine("Преподаватель не найден");
+            else
             {
-                case "1":
-                    Console.Write("Часть названия: ");
-                    foreach (var b in lib.FindByTitle(Console.ReadLine()))
-                        Console.WriteLine(b);
-                    break;
-                case "2":
-                    Console.Write("Часть автора: ");
-                    foreach (var b in lib.FindByAuthor(Console.ReadLine()))
-                        Console.WriteLine(b);
-                    break;
-                case "3":
-                    Console.WriteLine("Выберите жанр:");
-                    foreach (var g in Enum.GetValues(typeof(Genre)))
-                        Console.WriteLine($"  {(int)g} – {g}");
-                    if (int.TryParse(Console.ReadLine(), out int gi) && Enum.IsDefined(typeof(Genre), gi))
-                    {
-                        foreach (var b in lib.FindByGenre((Genre)gi))
-                            Console.WriteLine(b);
-                    }
-                    else
-                        Console.WriteLine("Неверный жанр.");
-                    break;
-                default:
-                    Console.WriteLine("Неверная опция.");
-                    break;
+                Console.WriteLine(i);
+                Console.WriteLine("Курсы преподавателя:");
+                foreach (var c in i.Courses)
+                    Console.WriteLine("  " + c);
             }
         }
 
-        static void SortBooks(Library lib)
+        static void AddCourse(University uni)
         {
-            Console.WriteLine("1–по названию, 2–по году");
-            switch (Console.ReadLine())
+            Console.Write("Название курса: ");
+            var title = Console.ReadLine()!;
+            var c = uni.AddCourse(title);
+            Console.WriteLine("Создан " + c);
+        }
+
+        static void ListCourses(University uni)
+        {
+            foreach (var c in uni.GetAllCourses())
+                Console.WriteLine(c);
+        }
+
+        static void ShowCourseInfo(University uni)
+        {
+            Console.Write("ID курса: ");
+            var id = int.Parse(Console.ReadLine()!);
+            var c = uni.GetCourse(id);
+            if (c == null)
+                Console.WriteLine("Курс не найден");
+            else
             {
-                case "1":
-                    foreach (var b in lib.SortByTitle())
-                        Console.WriteLine(b);
-                    break;
-                case "2":
-                    foreach (var b in lib.SortByYear())
-                        Console.WriteLine(b);
-                    break;
-                default:
-                    Console.WriteLine("Неверная опция.");
-                    break;
+                Console.WriteLine(c);
+                Console.WriteLine("Студенты на курсе:");
+                foreach (var s in c.Students)
+                    Console.WriteLine("  " + s);
             }
         }
 
-        static void ShowPriceExtremes(Library lib)
+        static void EnrollStudent(University uni)
         {
-            var max = lib.GetMostExpensive();
-            var min = lib.GetCheapest();
-            Console.WriteLine("Самая дорогая:  " + (max != null ? max.ToString() : "(нет)"));
-            Console.WriteLine("Самая дешевая: " + (min != null ? min.ToString() : "(нет)"));
+            Console.Write("ID студента: ");
+            var sid = int.Parse(Console.ReadLine()!);
+            Console.Write("ID курса: ");
+            var cid = int.Parse(Console.ReadLine()!);
+            var s = uni.GetStudent(sid);
+            var c = uni.GetCourse(cid);
+            if (s == null || c == null)
+                Console.WriteLine("Студент или курс не найдены");
+            else
+            {
+                s.Enroll(c);
+                Console.WriteLine($"Студент {s.Name} записан на курс {c.Title}");
+            }
         }
 
-        static void ShowGroupByAuthor(Library lib)
+        static void AssignInstructor(University uni)
         {
-            var groups = lib.GroupByAuthor();
-            Console.WriteLine("Книг на автора:");
-            foreach (var kv in groups)
-                Console.WriteLine($"  {kv.Key}: {kv.Value}");
+            Console.Write("ID преподавателя: ");
+            var iid = int.Parse(Console.ReadLine()!);
+            Console.Write("ID курса: ");
+            var cid = int.Parse(Console.ReadLine()!);
+            var i = uni.GetInstructor(iid);
+            var c = uni.GetCourse(cid);
+            if (i == null || c == null)
+                Console.WriteLine("Преподаватель или курс не найдены");
+            else
+            {
+                i.AssignCourse(c);
+                Console.WriteLine($"Преподаватель {i.Name} назначен на курс {c.Title}");
+            }
+        }
+
+        static void ListStudentCourses(University uni)
+        {
+            Console.Write("ID студента: ");
+            var sid = int.Parse(Console.ReadLine()!);
+            var s = uni.GetStudent(sid);
+            if (s == null)
+                Console.WriteLine("Студент не найден");
+            else
+            {
+                Console.WriteLine($"Курсы студента {s.Name}:");
+                foreach (var c in s.Courses)
+                    Console.WriteLine("  " + c);
+            }
+        }
+
+        static void ListCourseStudents(University uni)
+        {
+            Console.Write("ID курса: ");
+            var cid = int.Parse(Console.ReadLine()!);
+            var c = uni.GetCourse(cid);
+            if (c == null)
+                Console.WriteLine("Курс не найден");
+            else
+            {
+                Console.WriteLine($"Студенты на курсе {c.Title}:");
+                foreach (var s in c.Students)
+                    Console.WriteLine("  " + s);
+            }
         }
     }
 }

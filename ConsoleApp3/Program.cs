@@ -1,408 +1,425 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Threading;
 
-namespace UniversityManagement
+namespace TextRogueLike
 {
-    // Абстрактный класс Person — общие свойства для студентов и преподавателей
-    abstract class Person
+    // Базовый класс персонажа (игрок или враг)
+    abstract class Character
     {
-        private static int _nextId = 1;
+        public string Name { get; protected set; }
+        public int HP { get; protected set; }
+        public int MaxHP { get; protected set; }
+        public int AttackPower { get; protected set; }
+        public int DefensePower { get; protected set; }
 
-        public int Id { get; }
-        public string Name { get; }
-        public int Age { get; }
-        public string Email { get; }
+        protected static Random rand = new Random();
 
-        protected Person(string name, int age, string email)
+        protected Character(string name, int hp, int attack, int defense)
         {
-            if (string.IsNullOrWhiteSpace(name))
-                throw new ArgumentException("Имя не может быть пустым.");
-            if (age <= 0)
-                throw new ArgumentException("Возраст должен быть положительным.");
-            if (string.IsNullOrWhiteSpace(email) || !email.Contains("@"))
-                throw new ArgumentException("Некорректный e-mail.");
-
-            Id = _nextId++;
             Name = name;
-            Age = age;
-            Email = email;
+            MaxHP = hp;
+            HP = hp;
+            AttackPower = attack;
+            DefensePower = defense;
         }
 
-        // Полиморфный метод для отображения информации о человеке
-        public abstract string GetInfo();
+        public bool IsAlive => HP > 0;
 
-        public override string ToString() => GetInfo();
+        // Урон "через метод", чтобы не лезть напрямую в HP
+        public void TakeDamage(int dmg)
+        {
+            HP -= dmg;
+            if (HP < 0) HP = 0;
+        }
+
+        public abstract void Attack(Character target);
+
+        public override string ToString()
+        {
+            return $"{Name} [HP: {HP}/{MaxHP}, Atk: {AttackPower}, Def: {DefensePower}]";
+        }
     }
 
-    // Класс Student наследует Person и хранит список курсов
-    class Student : Person
+    // Игрок
+    class Player : Character
     {
-        private readonly List<Course> _courses = new List<Course>();
-        public IReadOnlyList<Course> Courses => _courses;
+        public Weapon Weapon { get; private set; }
+        public Armor Armor { get; private set; }
+        public bool IsFrozen { get; set; }
 
-        public Student(string name, int age, string email)
-            : base(name, age, email)
+        public Player(string name)
+            : base(name, hp: 100, attack: 10, defense: 5)
         {
+            Weapon = new Weapon("Ру́чные кулаки", 0);
+            Armor = new Armor("Рваная одежда", 0);
+            IsFrozen = false;
         }
 
-        // Записать студента на курс
-        public void Enroll(Course course)
+        public override void Attack(Character target)
         {
-            if (course == null)
-                throw new ArgumentNullException(nameof(course));
-            if (!_courses.Contains(course))
+            int atk = AttackPower + Weapon.Attack;
+            int dmg = atk - target.DefensePower;
+            if (dmg < 1) dmg = 1;
+            Console.WriteLine($"{Name} атакует {target.Name} за {dmg} урона.");
+            target.TakeDamage(dmg);
+        }
+
+        public void DrinkPotion()
+        {
+            HP = MaxHP;
+            Console.WriteLine("Вы выпили лечебное зелье и полностью восстановили здоровье!");
+        }
+
+        public void Equip(Weapon w) => Weapon = w;
+        public void Equip(Armor a) => Armor = a;
+
+        // Метод защиты: шанс увернуться + блок
+        public void DefendAndTakeHit(int incomingAttack)
+        {
+            if (rand.NextDouble() < 0.4)
             {
-                _courses.Add(course);
-                course.AddStudent(this);
+                Console.WriteLine("Вы полностью уклонились от удара!");
+                return;
+            }
+
+            double factor = 0.7 + rand.NextDouble() * 0.3;
+            int blockValue = (int)Math.Round((DefensePower + Armor.Defense) * factor);
+            int dmg = incomingAttack - blockValue;
+            if (dmg < 1) dmg = 1;
+
+            TakeDamage(dmg);
+            Console.WriteLine($"Вы не уклонились. Блок {blockValue} уменьшил урон до {dmg}. Ваше HP теперь {HP}/{MaxHP}.");
+        }
+    }
+
+    // Враги
+    abstract class Enemy : Character
+    {
+        protected Enemy(string name, int hp, int atk, int def)
+            : base(name, hp, atk, def)
+        { }
+    }
+
+    class Goblin : Enemy
+    {
+        protected double CritChance;
+
+        public Goblin() : base("Гоблин", hp: 30, atk: 8, def: 2)
+        {
+            CritChance = 0.2;
+        }
+
+        public override void Attack(Character target)
+        {
+            int baseDmg = AttackPower;
+            bool isCrit = rand.NextDouble() < CritChance;
+            int dmg = isCrit ? baseDmg * 2 : baseDmg;
+
+            Console.WriteLine(isCrit
+                ? $"{Name} наносит КРИТИЧЕСКИЙ удар за {dmg}!"
+                : $"{Name} атакует за {dmg}.");
+
+            target.TakeDamage(dmg);
+        }
+    }
+
+    class Skeleton : Enemy
+    {
+        public Skeleton() : base("Скелет", hp: 40, atk: 6, def: 3) { }
+
+        public override void Attack(Character target)
+        {
+            int dmg = AttackPower;
+            Console.WriteLine($"{Name} атакует и игнорирует вашу броню, урон {dmg}.");
+            target.TakeDamage(dmg);
+        }
+    }
+
+    class Mage : Enemy
+    {
+        protected double FreezeChance;
+
+        public Mage() : base("Маг", hp: 25, atk: 5, def: 1)
+        {
+            FreezeChance = 0.2;
+        }
+
+        public override void Attack(Character target)
+        {
+            int dmg = AttackPower;
+            Console.WriteLine($"{Name} атакует за {dmg}.");
+            target.TakeDamage(dmg);
+
+            if (rand.NextDouble() < FreezeChance && target is Player p)
+            {
+                p.IsFrozen = true;
+                Console.WriteLine($"{Name} наложил заморозку! Вы пропустите следующий ход.");
+            }
+        }
+    }
+
+    // Боссы
+    class BossVVG : Goblin
+    {
+        public BossVVG()
+        {
+            Name = "ВВГ (босс-гоблин)";
+            MaxHP = (int)(MaxHP * 2.0);
+            HP = MaxHP;
+            AttackPower = (int)(AttackPower * 1.5);
+            DefensePower = (int)(DefensePower * 1.2);
+            CritChance += 0.10;
+        }
+    }
+
+    class BossKovalskiy : Skeleton
+    {
+        public BossKovalskiy()
+        {
+            Name = "Ковальский (босс-скелет)";
+            MaxHP = (int)(MaxHP * 2.5);
+            HP = MaxHP;
+            AttackPower = (int)(AttackPower * 1.3);
+            DefensePower = (int)(DefensePower * 1.4);
+        }
+    }
+
+    class BossArchMage : Mage
+    {
+        public BossArchMage()
+        {
+            Name = "Архимаг C++ (босс-маг)";
+            MaxHP = (int)(MaxHP * 1.8);
+            HP = MaxHP;
+            AttackPower = (int)(AttackPower * 1.6);
+            DefensePower = (int)(DefensePower * 1.1);
+            FreezeChance += 0.10;
+        }
+    }
+
+    class BossPestov : Skeleton
+    {
+        protected double FreezeChance;
+
+        public BossPestov()
+        {
+            Name = "Пестов С-- (босс-скелет)";
+            MaxHP = (int)(MaxHP * 1.3);
+            HP = MaxHP;
+            AttackPower = (int)(AttackPower * 1.8);
+            DefensePower = (int)(DefensePower * 0.6);
+            FreezeChance = 0.15;
+        }
+
+        public override void Attack(Character target)
+        {
+            int dmg = AttackPower;
+            Console.WriteLine($"{Name} атакует, игнорирует броню за {dmg} урона.");
+            target.TakeDamage(dmg);
+
+            if (rand.NextDouble() < FreezeChance && target is Player p)
+            {
+                p.IsFrozen = true;
+                Console.WriteLine($"{Name} наложил заморозку!");
+            }
+        }
+    }
+
+    // Предметы
+    class Weapon
+    {
+        public string Name { get; }
+        public int Attack { get; }
+        public Weapon(string name, int atk)
+        {
+            Name = name;
+            Attack = atk;
+        }
+        public override string ToString() => $"{Name} (+{Attack} к атаке)";
+    }
+
+    class Armor
+    {
+        public string Name { get; }
+        public int Defense { get; }
+        public Armor(string name, int def)
+        {
+            Name = name;
+            Defense = def;
+        }
+        public override string ToString() => $"{Name} (+{Defense} к брони)";
+    }
+
+    // Основной класс-игра
+    class Game
+    {
+        private Player player;
+        private int turnCount = 0;
+        private static Random rand = new Random();
+
+        public Game()
+        {
+            Console.Write("Введите имя героя: ");
+            string name = Console.ReadLine()!;   // ! чтобы подавить nullable‐предупреждение
+            player = new Player(name);
+        }
+
+        public void Run()
+        {
+            Console.WriteLine($"\nДобро пожаловать, {player.Name}! Приготовьтесь к приключениям...\n");
+
+            while (player.IsAlive)
+            {
+                turnCount++;
+                Console.WriteLine($"\n--- Ход #{turnCount} ---");
+                Thread.Sleep(200);
+
+                if (turnCount % 10 == 0)
+                {
+                    Enemy boss = SpawnBoss();
+                    Console.WriteLine($"!! ВНИМАНИЕ: появился БОСС: {boss.Name}! !!");
+                    Fight(boss);
+                }
+                else
+                {
+                    if (rand.NextDouble() < 0.5)
+                        OpenChest();
+                    else
+                    {
+                        Enemy enemy = SpawnRandomEnemy();
+                        Console.WriteLine($"Появился враг: {enemy.Name}");
+                        Fight(enemy);
+                    }
+                }
+
+                if (!player.IsAlive)
+                    Console.WriteLine("Вы пали в бою. Игра окончена.");
             }
         }
 
-        public override string GetInfo()
+        private Enemy SpawnRandomEnemy()
         {
-            return $"[Студент #{Id}] {Name}, {Age} лет, {Email}. Записан на курсов: {_courses.Count}";
-        }
-    }
-
-    // Класс Instructor наследует Person и хранит список курсов, которые ведёт
-    class Instructor : Person
-    {
-        private readonly List<Course> _courses = new List<Course>();
-        public IReadOnlyList<Course> Courses => _courses;
-
-        public Instructor(string name, int age, string email)
-            : base(name, age, email)
-        {
-        }
-
-        // Назначить преподавателя на курс
-        public void AssignCourse(Course course)
-        {
-            if (course == null)
-                throw new ArgumentNullException(nameof(course));
-            if (!_courses.Contains(course))
+            return rand.Next(3) switch
             {
-                _courses.Add(course);
-                course.AssignInstructor(this);
+                0 => new Goblin(),
+                1 => new Skeleton(),
+                2 => new Mage(),
+                _ => new Goblin(),
+            };
+        }
+
+        // Теперь возвращаем Enemy, а не Character
+        private Enemy SpawnBoss()
+        {
+            return rand.Next(4) switch
+            {
+                0 => new BossVVG(),
+                1 => new BossKovalskiy(),
+                2 => new BossArchMage(),
+                3 => new BossPestov(),
+                _ => new BossVVG(),
+            };
+        }
+
+        private void OpenChest()
+        {
+            Console.WriteLine("Вы нашли сундук!");
+            Thread.Sleep(300);
+
+            switch (rand.Next(3))
+            {
+                case 0:
+                    Console.WriteLine("В сундуке – лечебное зелье!");
+                    player.DrinkPotion();
+                    break;
+                case 1:
+                    var w = new Weapon($"Меч+{rand.Next(1, 6)}", rand.Next(1, 6));
+                    Console.WriteLine($"В сундуке – {w}. Ваша текущая экипировка: {player.Weapon}");
+                    Console.Write("Взять новое оружие? (y/n): ");
+                    if (Console.ReadLine()!.ToLower() == "y")
+                    {
+                        player.Equip(w);
+                        Console.WriteLine("Вы экипировали " + w);
+                    }
+                    break;
+                default:
+                case 2:
+                    var a = new Armor($"Доспех+{rand.Next(1, 6)}", rand.Next(1, 6));
+                    Console.WriteLine($"В сундуке – {a}. Ваш текущий доспех: {player.Armor}");
+                    Console.Write("Взять новый доспех? (y/n): ");
+                    if (Console.ReadLine()!.ToLower() == "y")
+                    {
+                        player.Equip(a);
+                        Console.WriteLine("Вы экипировали " + a);
+                    }
+                    break;
             }
         }
 
-        public override string GetInfo()
+        private void Fight(Enemy enemy)
         {
-            return $"[Преподаватель #{Id}] {Name}, {Age} лет, {Email}. Преподаёт курсов: {_courses.Count}";
+            bool defending = false;
+
+            while (player.IsAlive && enemy.IsAlive)
+            {
+                Console.WriteLine($"\n{player.Name}: HP {player.HP}/{player.MaxHP}  vs  {enemy.Name}: HP {enemy.HP}/{enemy.MaxHP}");
+
+                // Ход игрока
+                if (player.IsFrozen)
+                {
+                    Console.WriteLine("Вы заморожены и пропускаете ход!");
+                    player.IsFrozen = false;
+                    defending = false;
+                }
+                else
+                {
+                    Console.Write("Ваш ход! (1 – Атака, 2 – Защита): ");
+                    string cmd = Console.ReadLine()!;
+                    if (cmd == "2")
+                    {
+                        defending = true;
+                        Console.WriteLine("Вы готовитесь защищаться...");
+                    }
+                    else
+                    {
+                        defending = false;
+                        player.Attack(enemy);
+                    }
+                }
+
+                if (!enemy.IsAlive)
+                {
+                    Console.WriteLine($"{enemy.Name} побеждён!");
+                    break;
+                }
+
+                // Ход врага
+                Console.WriteLine($"\nХод врага {enemy.Name}:");
+                if (defending)
+                    player.DefendAndTakeHit(enemy.AttackPower);
+                else
+                    enemy.Attack(player);
+
+                defending = false;
+
+                if (!player.IsAlive)
+                {
+                    Console.WriteLine("Вы пали в бою.");
+                    break;
+                }
+            }
         }
     }
 
-    // Класс Course хранит информацию о названии, преподавателе и списке студентов
-    class Course
-    {
-        private static int _nextId = 1;
-
-        public int Id { get; }
-        public string Title { get; }
-        public Instructor? Instructor { get; private set; }
-
-        private readonly List<Student> _students = new List<Student>();
-        public IReadOnlyList<Student> Students => _students;
-
-        public Course(string title)
-        {
-            if (string.IsNullOrWhiteSpace(title))
-                throw new ArgumentException("Название курса не может быть пустым.");
-            Id = _nextId++;
-            Title = title;
-        }
-
-        // Внутренний метод — добавляет студента в список
-        internal void AddStudent(Student student)
-        {
-            if (!_students.Contains(student))
-                _students.Add(student);
-        }
-
-        // Внутренний метод — назначает преподавателя
-        internal void AssignInstructor(Instructor instructor)
-        {
-            Instructor = instructor;
-        }
-
-        public string GetInfo()
-        {
-            var instrInfo = Instructor != null
-                ? $"Преподаватель: {Instructor.Name}"
-                : "Преподаватель не назначен";
-            return $"[Курс #{Id}] {Title}. {instrInfo}. Студентов: {_students.Count}";
-        }
-
-        public override string ToString() => GetInfo();
-    }
-
-    // Класс University — точка хранения всех студентов, преподавателей и курсов
-    class University
-    {
-        private readonly List<Student> _students = new List<Student>();
-        private readonly List<Instructor> _instructors = new List<Instructor>();
-        private readonly List<Course> _courses = new List<Course>();
-
-        // Добавить студента
-        public Student AddStudent(string name, int age, string email)
-        {
-            var s = new Student(name, age, email);
-            _students.Add(s);
-            return s;
-        }
-
-        // Получить студента по Id
-        public Student? GetStudent(int id) => _students.FirstOrDefault(s => s.Id == id);
-
-        public IEnumerable<Student> GetAllStudents() => _students;
-
-        // Добавить преподавателя
-        public Instructor AddInstructor(string name, int age, string email)
-        {
-            var i = new Instructor(name, age, email);
-            _instructors.Add(i);
-            return i;
-        }
-
-        public Instructor? GetInstructor(int id) => _instructors.FirstOrDefault(i => i.Id == id);
-
-        public IEnumerable<Instructor> GetAllInstructors() => _instructors;
-
-        // Добавить курс
-        public Course AddCourse(string title)
-        {
-            var c = new Course(title);
-            _courses.Add(c);
-            return c;
-        }
-
-        public Course? GetCourse(int id) => _courses.FirstOrDefault(c => c.Id == id);
-
-        public IEnumerable<Course> GetAllCourses() => _courses;
-    }
-
-    // Консольное меню
     class Program
     {
         static void Main()
         {
-            var university = new University();
-
-            while (true)
-            {
-                Console.WriteLine("\n===== Меню управления университетом =====");
-                Console.WriteLine("1  — Добавить студента");
-                Console.WriteLine("2  — Показать всех студентов");
-                Console.WriteLine("3  — Просмотреть данные студента");
-                Console.WriteLine("4  — Добавить преподавателя");
-                Console.WriteLine("5  — Показать всех преподавателей");
-                Console.WriteLine("6  — Просмотреть данные преподавателя");
-                Console.WriteLine("7  — Создать курс");
-                Console.WriteLine("8  — Показать все курсы");
-                Console.WriteLine("9  — Просмотреть данные курса");
-                Console.WriteLine("10 — Записать студента на курс");
-                Console.WriteLine("11 — Назначить преподавателя на курс");
-                Console.WriteLine("12 — Список курсов студента");
-                Console.WriteLine("13 — Список студентов курса");
-                Console.WriteLine("0  — Выход");
-                Console.Write("Выберите команду: ");
-
-                var choice = Console.ReadLine();
-                Console.WriteLine();
-
-                try
-                {
-                    switch (choice)
-                    {
-                        case "1": AddStudent(university); break;
-                        case "2": ListStudents(university); break;
-                        case "3": ShowStudentInfo(university); break;
-                        case "4": AddInstructor(university); break;
-                        case "5": ListInstructors(university); break;
-                        case "6": ShowInstructorInfo(university); break;
-                        case "7": AddCourse(university); break;
-                        case "8": ListCourses(university); break;
-                        case "9": ShowCourseInfo(university); break;
-                        case "10": EnrollStudent(university); break;
-                        case "11": AssignInstructor(university); break;
-                        case "12": ListStudentCourses(university); break;
-                        case "13": ListCourseStudents(university); break;
-                        case "0": return;
-                        default:
-                            Console.WriteLine("Неверная команда");
-                            break;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("Ошибка: " + ex.Message);
-                }
-            }
-        }
-
-        static void AddStudent(University uni)
-        {
-            Console.Write("Имя: ");
-            var name = Console.ReadLine()!;
-            Console.Write("Возраст: ");
-            var age = int.Parse(Console.ReadLine()!);
-            Console.Write("Email: ");
-            var email = Console.ReadLine()!;
-
-            var s = uni.AddStudent(name, age, email);
-            Console.WriteLine("Добавлен " + s);
-        }
-
-        static void ListStudents(University uni)
-        {
-            foreach (var s in uni.GetAllStudents())
-                Console.WriteLine(s);
-        }
-
-        static void ShowStudentInfo(University uni)
-        {
-            Console.Write("ID студента: ");
-            var id = int.Parse(Console.ReadLine()!);
-            var s = uni.GetStudent(id);
-            if (s == null)
-                Console.WriteLine("Студент не найден");
-            else
-            {
-                Console.WriteLine(s);
-                Console.WriteLine("Курсы студента:");
-                foreach (var c in s.Courses)
-                    Console.WriteLine("  " + c);
-            }
-        }
-
-        static void AddInstructor(University uni)
-        {
-            Console.Write("Имя: ");
-            var name = Console.ReadLine()!;
-            Console.Write("Возраст: ");
-            var age = int.Parse(Console.ReadLine()!);
-            Console.Write("Email: ");
-            var email = Console.ReadLine()!;
-
-            var i = uni.AddInstructor(name, age, email);
-            Console.WriteLine("Добавлен " + i);
-        }
-
-        static void ListInstructors(University uni)
-        {
-            foreach (var i in uni.GetAllInstructors())
-                Console.WriteLine(i);
-        }
-
-        static void ShowInstructorInfo(University uni)
-        {
-            Console.Write("ID преподавателя: ");
-            var id = int.Parse(Console.ReadLine()!);
-            var i = uni.GetInstructor(id);
-            if (i == null)
-                Console.WriteLine("Преподаватель не найден");
-            else
-            {
-                Console.WriteLine(i);
-                Console.WriteLine("Курсы преподавателя:");
-                foreach (var c in i.Courses)
-                    Console.WriteLine("  " + c);
-            }
-        }
-
-        static void AddCourse(University uni)
-        {
-            Console.Write("Название курса: ");
-            var title = Console.ReadLine()!;
-            var c = uni.AddCourse(title);
-            Console.WriteLine("Создан " + c);
-        }
-
-        static void ListCourses(University uni)
-        {
-            foreach (var c in uni.GetAllCourses())
-                Console.WriteLine(c);
-        }
-
-        static void ShowCourseInfo(University uni)
-        {
-            Console.Write("ID курса: ");
-            var id = int.Parse(Console.ReadLine()!);
-            var c = uni.GetCourse(id);
-            if (c == null)
-                Console.WriteLine("Курс не найден");
-            else
-            {
-                Console.WriteLine(c);
-                Console.WriteLine("Студенты на курсе:");
-                foreach (var s in c.Students)
-                    Console.WriteLine("  " + s);
-            }
-        }
-
-        static void EnrollStudent(University uni)
-        {
-            Console.Write("ID студента: ");
-            var sid = int.Parse(Console.ReadLine()!);
-            Console.Write("ID курса: ");
-            var cid = int.Parse(Console.ReadLine()!);
-            var s = uni.GetStudent(sid);
-            var c = uni.GetCourse(cid);
-            if (s == null || c == null)
-                Console.WriteLine("Студент или курс не найдены");
-            else
-            {
-                s.Enroll(c);
-                Console.WriteLine($"Студент {s.Name} записан на курс {c.Title}");
-            }
-        }
-
-        static void AssignInstructor(University uni)
-        {
-            Console.Write("ID преподавателя: ");
-            var iid = int.Parse(Console.ReadLine()!);
-            Console.Write("ID курса: ");
-            var cid = int.Parse(Console.ReadLine()!);
-            var i = uni.GetInstructor(iid);
-            var c = uni.GetCourse(cid);
-            if (i == null || c == null)
-                Console.WriteLine("Преподаватель или курс не найдены");
-            else
-            {
-                i.AssignCourse(c);
-                Console.WriteLine($"Преподаватель {i.Name} назначен на курс {c.Title}");
-            }
-        }
-
-        static void ListStudentCourses(University uni)
-        {
-            Console.Write("ID студента: ");
-            var sid = int.Parse(Console.ReadLine()!);
-            var s = uni.GetStudent(sid);
-            if (s == null)
-                Console.WriteLine("Студент не найден");
-            else
-            {
-                Console.WriteLine($"Курсы студента {s.Name}:");
-                foreach (var c in s.Courses)
-                    Console.WriteLine("  " + c);
-            }
-        }
-
-        static void ListCourseStudents(University uni)
-        {
-            Console.Write("ID курса: ");
-            var cid = int.Parse(Console.ReadLine()!);
-            var c = uni.GetCourse(cid);
-            if (c == null)
-                Console.WriteLine("Курс не найден");
-            else
-            {
-                Console.WriteLine($"Студенты на курсе {c.Title}:");
-                foreach (var s in c.Students)
-                    Console.WriteLine("  " + s);
-            }
+            Console.Title = "Text Rogue-like";
+            var game = new Game();
+            game.Run();
+            Console.WriteLine("Нажмите любую клавишу для выхода.");
+            Console.ReadKey();
         }
     }
 }

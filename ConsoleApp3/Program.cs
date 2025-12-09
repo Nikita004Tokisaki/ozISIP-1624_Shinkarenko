@@ -1,339 +1,237 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
+using System.Text;
 
-namespace StoreInventory
+namespace TextAnalysisApp
 {
-    public enum Category
+    // Хранит статистику по одному тексту
+    class TextStatistics
     {
-        Electronics,  // Электроника
-        Grocery,      // Продукты
-        Clothing      // Одежда
-    }
+        public string Text { get; set; }
+        public int WordCount { get; set; }
+        public string ShortestWord { get; set; }
+        public string LongestWord { get; set; }
+        public int SentenceCount { get; set; }
+        public int VowelCount { get; set; }
+        public int ConsonantCount { get; set; }
+        public Dictionary<char, int> LetterFrequency { get; set; }
 
-    public class Product
-    {
-        public string Code { get; private set; }      // Уникальный код
-        public string Name { get; private set; }      // Название
-        public decimal Price { get; private set; }    // Цена
-        public int Quantity { get; private set; }     // Количество на складе
-        public Category Category { get; private set; }
-
-
-        public bool IsInStock => Quantity > 0;
-
-        public Product(string code, string name, decimal price, int quantity, Category category)
+        // Вывод статистики в консоль
+        public void Print()
         {
-            if (string.IsNullOrWhiteSpace(code))
-                throw new ArgumentException("Code cannot be empty");
-            if (string.IsNullOrWhiteSpace(name))
-                throw new ArgumentException("Name cannot be empty");
-            if (price < 0)
-                throw new ArgumentException("Price cannot be negative");
-            if (quantity < 0)
-                throw new ArgumentException("Quantity cannot be negative");
-
-            Code = code;
-            Name = name;
-            Price = price;
-            Quantity = quantity;
-            Category = category;
+            Console.WriteLine("----- Статистика текста -----");
+            Console.WriteLine("Исходный текст:");
+            Console.WriteLine(Text);
+            Console.WriteLine("Количество слов (без союзов и чисел): {0}", WordCount);
+            Console.WriteLine("Самое короткое слово: {0}", ShortestWord ?? "(нет)");
+            Console.WriteLine("Самое длинное слово: {0}", LongestWord ?? "(нет)");
+            Console.WriteLine("Количество предложений: {0}", SentenceCount);
+            Console.WriteLine("Гласных букв: {0}", VowelCount);
+            Console.WriteLine("Согласных букв: {0}", ConsonantCount);
+            Console.WriteLine("Частота встречаемости букв:");
+            List<char> keys = new List<char>(LetterFrequency.Keys);
+            keys.Sort();
+            foreach (char c in keys)
+                Console.WriteLine("  {0} : {1}", c, LetterFrequency[c]);
+            Console.WriteLine("-----------------------------");
         }
 
-
-        public void AddQuantity(int amount)
+        // Основной метод расчёта статистики по тексту
+        public static TextStatistics Compute(string text, string[] conjunctions)
         {
-            if (amount <= 0)
-                throw new ArgumentException("Supply amount must be positive");
-            Quantity += amount;
-        }
-
-
-        public void RemoveQuantity(int amount)
-        {
-            if (amount <= 0)
-                throw new ArgumentException("Sell amount must be positive");
-            if (amount > Quantity)
-                throw new InvalidOperationException("Not enough stock to sell");
-            Quantity -= amount;
-        }
-
-        public override string ToString()
-        {
-            return $"[{Code}] {Name} | Цена: {Price:C2} | Кол-во: {Quantity} | В наличии: {IsInStock} | Категория: {Category}";
-        }
-    }
-
-    public class InventoryManager
-    {
-        private readonly List<Product> products = new List<Product>();
-        private int nextCode = 1;  // следующий числовой код
-
-        public IReadOnlyList<Product> Products => products.AsReadOnly();
-
-        public InventoryManager()
-        {
-            // Наполняем 5 тестовыми товарами
-            AddProduct("Ноутбук", 75000m, 10, Category.Electronics);
-            AddProduct("Телефон", 45000m, 5, Category.Electronics);
-            AddProduct("Молоко", 65.5m, 50, Category.Grocery);
-            AddProduct("Хлеб", 30m, 100, Category.Grocery);
-            AddProduct("Футболка", 1200m, 20, Category.Clothing);
-        }
-
-        public Product AddProduct(string name, decimal price, int quantity, Category category)
-        {
-            string code = nextCode.ToString();
-            nextCode++;
-            var prod = new Product(code, name, price, quantity, category);
-            products.Add(prod);
-            return prod;
-        }
-
-
-        public bool DeleteProduct(string code)
-        {
-            var prod = FindByCode(code);
-            if (prod == null) return false;
-            return products.Remove(prod);
-        }
-
-
-        public bool OrderSupply(string code, int amount)
-        {
-            var prod = FindByCode(code);
-            if (prod == null) return false;
-            prod.AddQuantity(amount);
-            return true;
-        }
-
-
-        public bool SellProduct(string code, int amount)
-        {
-            var prod = FindByCode(code);
-            if (prod == null) return false;
-            prod.RemoveQuantity(amount);
-            return true;
-        }
-
-
-        public Product FindByCode(string code)
-        {
-            foreach (var p in products)
-                if (p.Code == code)
-                    return p;
-            return null;
-        }
-
-
-        public List<Product> FindByName(string namePart)
-        {
-            List<Product> result = new List<Product>();
-            foreach (var p in products)
+            TextStatistics stat = new TextStatistics
             {
-                if (p.Name.IndexOf(namePart, StringComparison.CurrentCultureIgnoreCase) >= 0)
-                    result.Add(p);
-            }
-            return result;
-        }
+                Text = text,
+                LetterFrequency = new Dictionary<char, int>()
+            };
 
-
-        public List<Product> FindByCategory(Category category)
-        {
-            List<Product> result = new List<Product>();
-            foreach (var p in products)
+            // 1. Разбиение на слова
+            List<string> allWords = new List<string>();
+            StringBuilder current = new StringBuilder();
+            foreach (char ch in text)
             {
-                if (p.Category == category)
-                    result.Add(p);
+                if (char.IsLetter(ch) || char.IsDigit(ch))
+                {
+                    current.Append(ch);
+                }
+                else if (current.Length > 0)
+                {
+                    allWords.Add(current.ToString());
+                    current.Clear();
+                }
             }
-            return result;
+            if (current.Length > 0)
+                allWords.Add(current.ToString());
+
+            // 2. Фильтрация: убираем союзы и числа
+            List<string> filteredWords = new List<string>();
+            foreach (string w in allWords)
+            {
+                string lw = w.ToLower();
+                bool isNumber = true;
+                foreach (char c in lw)
+                    if (!char.IsDigit(c))
+                    {
+                        isNumber = false;
+                        break;
+                    }
+                if (isNumber) continue;
+
+                bool isConj = false;
+                foreach (string conj in conjunctions)
+                    if (lw == conj)
+                    {
+                        isConj = true;
+                        break;
+                    }
+                if (isConj) continue;
+
+                filteredWords.Add(w);
+            }
+            stat.WordCount = filteredWords.Count;
+
+            // 3. Короткое/длинное слово
+            if (filteredWords.Count > 0)
+            {
+                stat.ShortestWord = filteredWords[0];
+                stat.LongestWord = filteredWords[0];
+                foreach (string w in filteredWords)
+                {
+                    if (w.Length < stat.ShortestWord.Length)
+                        stat.ShortestWord = w;
+                    if (w.Length > stat.LongestWord.Length)
+                        stat.LongestWord = w;
+                }
+            }
+
+            // 4. Подсчёт предложений
+            int sentences = 0;
+            foreach (char ch in text)
+                if (ch == '.' || ch == '!' || ch == '?')
+                    sentences++;
+            stat.SentenceCount = sentences;
+
+            // 5. Гласные/согласные/частота
+            char[] vowels = new char[] { 'а', 'е', 'ё', 'и', 'о', 'у', 'ы', 'э', 'ю', 'я' };
+            foreach (char ch in text)
+            {
+                if (char.IsLetter(ch))
+                {
+                    char lower = char.ToLower(ch);
+                    if (!stat.LetterFrequency.ContainsKey(lower))
+                        stat.LetterFrequency[lower] = 0;
+                    stat.LetterFrequency[lower]++;
+
+                    bool isVowel = false;
+                    foreach (char v in vowels)
+                        if (lower == v)
+                        {
+                            isVowel = true;
+                            break;
+                        }
+
+                    if (isVowel) stat.VowelCount++;
+                    else stat.ConsonantCount++;
+                }
+            }
+
+            return stat;
         }
     }
 
     class Program
     {
+        static readonly string[] Conjunctions = new string[]
+        {
+            "и", "а", "но", "как", "или", "либо", "да", "что",
+            "чтобы", "ведь", "когда", "пока", "то", "же"
+        };
+
         static void Main(string[] args)
         {
-            var inventory = new InventoryManager();
+            List<TextStatistics> history = new List<TextStatistics>();
+
             while (true)
             {
-                Console.WriteLine("\n--- Меню магазина ---");
-                Console.WriteLine("1. Добавить товар");
-                Console.WriteLine("2. Удалить товар");
-                Console.WriteLine("3. Заказать поставку");
-                Console.WriteLine("4. Продать товар");
-                Console.WriteLine("5. Поиск товара");
-                Console.WriteLine("6. Показать все товары");
-                Console.WriteLine("0. Выход");
-                Console.Write("Выберите опцию: ");
+                Console.WriteLine("Меню:");
+                Console.WriteLine("1. Ввести новый текст");
+                Console.WriteLine("2. Показать статистику по всем текстам");
+                Console.WriteLine("3. Выход");
+                Console.Write("Выберите пункт: ");
                 string choice = Console.ReadLine();
 
-                try
+                if (choice == "1")
                 {
-                    switch (choice)
+                    string text;
+                    do
                     {
-                        case "1":
-                            AddNewProduct(inventory);
-                            break;
-                        case "2":
-                            DeleteProduct(inventory);
-                            break;
-                        case "3":
-                            OrderSupply(inventory);
-                            break;
-                        case "4":
-                            SellProduct(inventory);
-                            break;
-                        case "5":
-                            SearchProduct(inventory);
-                            break;
-                        case "6":
-                            ShowAll(inventory);
-                            break;
-                        case "0":
-                            return;
-                        default:
-                            Console.WriteLine("Неверный выбор, повторите.");
-                            break;
+                        Console.WriteLine("Введите текст (не менее 100 символов):");
+                        text = Console.ReadLine();
+                    }
+                    while (text == null || text.Length < 100);
+
+                    var stat = TextStatistics.Compute(text, Conjunctions);
+                    stat.Print();
+                    history.Add(stat);
+
+                    Console.Write("Хотите удалить из текста какие-то буквы? (д/н): ");
+                    string yn = Console.ReadLine().ToLower();
+                    if (yn == "д" || yn == "y" || yn == "yes")
+                    {
+                        Console.WriteLine("Введите через пробел буквы, которые нужно удалить (любого регистра):");
+                        string toRemoveLine = Console.ReadLine();
+
+                        // тут именно string[], а не char[]
+                        string[] tokens = toRemoveLine
+                            .Split(new char[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries);
+
+                        HashSet<char> remSet = new HashSet<char>();
+                        foreach (string tok in tokens)
+                        {
+                            // берём первый символ каждого токена
+                            if (tok.Length > 0)
+                                remSet.Add(char.ToLower(tok[0]));
+                        }
+
+                        // строим новый текст без этих букв
+                        StringBuilder sb = new StringBuilder();
+                        foreach (char c in text)
+                        {
+                            if (char.IsLetter(c) && remSet.Contains(char.ToLower(c)))
+                                continue;
+                            sb.Append(c);
+                        }
+                        string newText = sb.ToString();
+
+                        var stat2 = TextStatistics.Compute(newText, Conjunctions);
+                        Console.WriteLine("Статистика после удаления букв:");
+                        stat2.Print();
+                        history.Add(stat2);
                     }
                 }
-                catch (Exception ex)
+                else if (choice == "2")
                 {
-                    // Ловим все ошибки валидации и не даём программе упасть
-                    Console.WriteLine("Ошибка: " + ex.Message);
+                    if (history.Count == 0)
+                    {
+                        Console.WriteLine("Статистики ещё нет.");
+                    }
+                    else
+                    {
+                        for (int i = 0; i < history.Count; i++)
+                        {
+                            Console.WriteLine("---- Текст #{0} ----", i + 1);
+                            history[i].Print();
+                        }
+                    }
                 }
-            }
-        }
-
-        static void AddNewProduct(InventoryManager inv)
-        {
-            Console.Write("Название: ");
-            string name = Console.ReadLine();
-            Console.Write("Цена: ");
-            decimal price = ReadDecimalNonNegative();
-            Console.Write("Количество: ");
-            int qty = ReadIntNonNegative();
-            Console.WriteLine("Категории: 0=Electronics, 1=Grocery, 2=Clothing");
-            Console.Write("Выберите категорию (число): ");
-            int cat = ReadIntInRange(0, 2);
-
-            var prod = inv.AddProduct(name, price, qty, (Category)cat);
-            Console.WriteLine("Добавлен: " + prod);
-        }
-
-        static void DeleteProduct(InventoryManager inv)
-        {
-            Console.Write("Введите код товара для удаления: ");
-            string code = Console.ReadLine();
-            if (inv.DeleteProduct(code))
-                Console.WriteLine("Товар удалён.");
-            else
-                Console.WriteLine("Товар с таким кодом не найден.");
-        }
-
-        static void OrderSupply(InventoryManager inv)
-        {
-            Console.Write("Код товара: ");
-            string code = Console.ReadLine();
-            Console.Write("Сколько привезти: ");
-            int amount = ReadIntPositive();
-            if (inv.OrderSupply(code, amount))
-                Console.WriteLine("Поставка оформлена.");
-            else
-                Console.WriteLine("Товар не найден.");
-        }
-
-        static void SellProduct(InventoryManager inv)
-        {
-            Console.Write("Код товара: ");
-            string code = Console.ReadLine();
-            Console.Write("Сколько продать: ");
-            int amount = ReadIntPositive();
-            if (inv.SellProduct(code, amount))
-                Console.WriteLine("Продажа выполнена.");
-            else
-                Console.WriteLine("Товар не найден либо недостаточный остаток.");
-        }
-
-        static void SearchProduct(InventoryManager inv)
-        {
-            Console.WriteLine("1-По коду, 2-По названию, 3-По категории");
-            string m = Console.ReadLine();
-            switch (m)
-            {
-                case "1":
-                    Console.Write("Введите код: ");
-                    var byCode = inv.FindByCode(Console.ReadLine());
-                    Console.WriteLine(byCode != null ? byCode.ToString() : "Не найдено");
+                else if (choice == "3")
+                {
                     break;
-                case "2":
-                    Console.Write("Часть названия: ");
-                    var list2 = inv.FindByName(Console.ReadLine());
-                    if (list2.Count == 0) Console.WriteLine("Не найдено");
-                    else list2.ForEach(p => Console.WriteLine(p));
-                    break;
-                case "3":
-                    Console.WriteLine("0=Electronics,1=Grocery,2=Clothing");
-                    int c = ReadIntInRange(0, 2);
-                    var list3 = inv.FindByCategory((Category)c);
-                    if (list3.Count == 0) Console.WriteLine("Не найдено");
-                    else list3.ForEach(p => Console.WriteLine(p));
-                    break;
-                default:
-                    Console.WriteLine("Неверный выбор.");
-                    break;
-            }
-        }
-
-        static void ShowAll(InventoryManager inv)
-        {
-            Console.WriteLine("=== ВСЕ ТОВАРЫ ===");
-            foreach (var p in inv.Products)
-                Console.WriteLine(p);
-        }
-
-
-        static decimal ReadDecimalNonNegative()
-        {
-            while (true)
-            {
-                string s = Console.ReadLine();
-                if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.CurrentCulture, out decimal val) && val >= 0)
-                    return val;
-                Console.Write("Неверный ввод, введите неотрицательное число: ");
-            }
-        }
-
-        static int ReadIntPositive()
-        {
-            while (true)
-            {
-                string s = Console.ReadLine();
-                if (int.TryParse(s, out int val) && val > 0)
-                    return val;
-                Console.Write("Неверный ввод, введите целое > 0: ");
-            }
-        }
-
-        static int ReadIntNonNegative()
-        {
-            while (true)
-            {
-                string s = Console.ReadLine();
-                if (int.TryParse(s, out int val) && val >= 0)
-                    return val;
-                Console.Write("Неверный ввод, введите целое >= 0: ");
-            }
-        }
-
-        static int ReadIntInRange(int min, int max)
-        {
-            while (true)
-            {
-                string s = Console.ReadLine();
-                if (int.TryParse(s, out int val) && val >= min && val <= max)
-                    return val;
-                Console.Write($"Неверный ввод, введите число от {min} до {max}: ");
+                }
+                else
+                {
+                    Console.WriteLine("Неверный выбор. Попробуйте ещё раз.");
+                }
             }
         }
     }
